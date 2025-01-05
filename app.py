@@ -1,4 +1,4 @@
-from flask import Flask, render_template
+from flask import Flask, jsonify, render_template
 import os
 from numpy import true_divide
 import pandas as pd
@@ -290,6 +290,10 @@ def process_response_body(df, iu_with_crackle, iu_without_crackle):
             except Exception as e:
                 print(f"Unexpected error processing Request URL {request_url}: {e}")
 
+
+@app.route('/hi', methods=['GET'])
+def hi():
+    return jsonify({"user": "garvit"})
 
 if __name__ == '__main__':
     app.run(debug=True)
