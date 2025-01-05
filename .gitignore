@@ -1,0 +1,57 @@
+poetry.lock
+.venv/
+har_file_upload/
+uploads/
+static/
+templates/
+myenv
+
+
+# Byte-compiled / optimized / compiled Python files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+myenv/  # If your virtual environment folder has a custom name
+
+# Flask instance folder
+instance/
+
+# Flask environment variables file
+.env
+
+# Logs
+*.log
+
+# Database files
+*.sqlite3
+*.db
+
+# Cache files
+*.cache/
+*.pytest_cache/
+
+# Python egg files
+*.egg
+*.egg-info/
+dist/
+build/
+*.egg-info/
+
+# Pytest results
+.cache/
+
+# IDE Specific files
+.vscode/
+.idea/
+*.iml
+
+# Jupyter Notebooks Checkpoints (if using notebooks)
+.ipynb_checkpoints/
+
+# OS generated files
+.DS_Store
+Thumbs.db
