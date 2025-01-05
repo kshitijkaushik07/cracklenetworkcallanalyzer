@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 import os
 from numpy import true_divide
 import pandas as pd
@@ -295,6 +295,29 @@ def process_response_body(df, iu_with_crackle, iu_without_crackle):
 def hi():
     return jsonify({"user": "garvit"})
 
+
+@app.route('/findSSP', methods=['GET'])
+def findSSP():
+    return render_template('findSSP.html')
+
+@app.route('/upload', methods=['POST'])
+def upload_apk():
+    if 'apkFile' not in request.files:
+        return jsonify({"message": "No file part in the request"}), 400
+
+    file = request.files['apkFile']
+
+    if file.filename == '':
+        return jsonify({"message": "No file selected for uploading"}), 400
+
+    if not file.filename.endswith('.apk'):
+        return jsonify({"message": "Invalid file type. Only .apk files are allowed."}), 400
+
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+    file.save(file_path)
+
+    return jsonify({"message": f"File '{file.filename}' successfully uploaded!"})
+
 if __name__ == '__main__':
     # app.run(debug=True)
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=4000, debug=True)
