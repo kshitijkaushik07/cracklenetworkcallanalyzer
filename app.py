@@ -6,10 +6,16 @@ import csv
 import base64
 import json
 from urllib.parse import urlparse, parse_qs
+from zipfile import ZipFile
+from collections import defaultdict
+from androguard.core.bytecodes.dvm import DalvikVMFormat
+from androguard.core.bytecodes import dvm
 
 app = Flask(__name__)
 
 app.secret_key = 'your_secret_key'
+
+app.config['UPLOAD_FOLDER'] = 'uploads'
 
 def har_to_csv():
     # Full path for HAR and CSV files
@@ -291,33 +297,214 @@ def process_response_body(df, iu_with_crackle, iu_without_crackle):
                 print(f"Unexpected error processing Request URL {request_url}: {e}")
 
 
-@app.route('/hi', methods=['GET'])
-def hi():
-    return jsonify({"user": "garvit"})
+def get_classes_from_dex(dex_content):
+    """
+    Extract class names from a dex file content using androguard.
+    """
+    try:
+        dvm = DalvikVMFormat(dex_content)
+        classes = [cls.get_name() for cls in dvm.get_classes()]
+        return classes
+    except Exception as e:
+        return [f"Error parsing dex: {str(e)}"]
+    
 
+def get_class_size_and_inheritances(class_obj, visited_classes):
+    """
+    Recursively calculate the size of a class and its inherited components.
+    """
+    if class_obj.get_name() in visited_classes:
+        return 0  # Prevent infinite recursion for circular inheritance
 
-@app.route('/findSSP', methods=['GET'])
-def findSSP():
-    return render_template('findSSP.html')
+    # Mark this class as visited
+    visited_classes.add(class_obj.get_name())
+    
+    class_size = 0
 
-@app.route('/upload', methods=['POST'])
+    # Calculate size of methods in this class
+    for method in class_obj.get_methods():
+        class_size += len(method.get_name()) + method.get_code().get_length()
+
+    # Calculate size of fields in this class
+    for field in class_obj.get_fields():
+        class_size += len(field.get_name())
+
+    # Recursively calculate the size of inherited classes (parent class)
+    parent_class_name = class_obj.get_superclass_name()
+    if parent_class_name and parent_class_name != "Ljava/lang/Object;":
+        # Get the parent class object and calculate its size
+        parent_class = class_obj.get_vm().get_class_by_name(parent_class_name)
+        if parent_class:
+            class_size += get_class_size_and_inheritances(parent_class, visited_classes)
+
+    return class_size
+
+def calculate_class_size(class_obj):
+    """
+    Calculate the total size of a class including methods, fields, and metadata.
+    """
+    total_size = 0
+
+    # Size of the class name
+    total_size += len(class_obj.get_name())
+
+    # Size of the superclass name
+    if class_obj.get_superclassname():
+        total_size += len(class_obj.get_superclassname())
+
+    # Size of implemented interfaces
+    for interface in class_obj.get_interfaces():
+        total_size += len(interface)
+
+    # Size of methods
+    for method in class_obj.get_methods():
+        if method.get_code():  # Some methods may not have code (e.g., abstract methods)
+            total_size += method.get_code().get_length()
+        total_size += len(method.get_name())  # Add the size of the method name
+
+    # Size of fields
+    for field in class_obj.get_fields():
+        total_size += len(field.get_name())
+        total_size += len(field.get_descriptor())  # Add field descriptor size
+
+    return total_size
+
+def get_class_size_from_dex(dex_content, target_class_name='Lcom/'):
+    dex_obj = dvm.DalvikVMFormat(dex_content)
+    total_size = 0
+    for class_obj in dex_obj.get_classes():
+        if class_obj.get_name().startswith(target_class_name):
+            print("hi")
+            print(class_obj.get_name())
+            total_size += calculate_class_size(class_obj)
+    return total_size
+
+@app.route('/uploadApk', methods=['POST'])
 def upload_apk():
+    # Check if the 'apkFile' is part of the request
     if 'apkFile' not in request.files:
         return jsonify({"message": "No file part in the request"}), 400
 
     file = request.files['apkFile']
 
+    # Check if a file was selected
     if file.filename == '':
         return jsonify({"message": "No file selected for uploading"}), 400
 
+    # Ensure the file is an APK
     if not file.filename.endswith('.apk'):
         return jsonify({"message": "Invalid file type. Only .apk files are allowed."}), 400
 
+    # Save the uploaded file
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     file.save(file_path)
 
-    return jsonify({"message": f"File '{file.filename}' successfully uploaded!"})
+    target_class_name = "Lcom"  # Replace with your class name
+
+    with ZipFile(file_path, 'r') as apk_zip:
+        for dex_file in apk_zip.namelist():
+            if dex_file.endswith('.dex'):
+                with apk_zip.open(dex_file) as dex_file_content:
+                    dex_content = dex_file_content.read()
+                    if dex_file == "classes.dex":
+                        class_size = get_class_size_from_dex(dex_content)
+                    if class_size:
+                        print(f"Total size of {target_class_name}: {class_size / (1024 * 1024)} MB")
+
+    # try:
+    #     dex_files = []
+    #     folder_sizes = defaultdict(int)
+        
+        # # Extract the contents of the APK
+        # with ZipFile(file_path, 'r') as apk_zip:
+        #     file_list = apk_zip.namelist()
+        #     dex_files = [file for file in file_list if file.startswith('classes') and file.endswith('.dex')]
+            
+            # visited_classes = set()  # To track visited classes and avoid circular inheritance
+            # # Iterate through all dex files
+            # for dex_file in dex_files:
+            #     with apk_zip.open(dex_file) as dex_file_content:
+            #         # Using Androguard to parse dex file content
+            #         dex_content = dex_file_content.read()
+            #         # Load the APK
+            #         # apk_obj = apk.APK(None)
+            #         dex_obj = dvm.DalvikVMFormat(dex_content)
+                    
+            #         # Extract classes from dex file
+            #         for class_obj in dex_obj.get_classes():
+            #             # Get class name and calculate its size
+            #             class_name = class_obj.get_name()
+            #             folder_path = "/".join(class_name.split('/')[:2])  # Get folder structure like Lcom/google
+            #             print("nijnjn"+class_name)
+            #             # Only consider subfolders of "Lcom/google"
+            #             if folder_path.startswith("Lcom/applovin/"):
+            #                 print("flsnf")
+            #                 subfolder_path = "/".join(class_name.split('/')[:3])  # e.g., Lcom/google/foo
+                            
+            #                 # Calculate total size for class and its inherited components
+            #                 class_size = get_class_size_and_inheritances(class_obj, visited_classes)
+                            
+            #                 # Convert size to MB (can use KB if needed)
+            #                 class_size_in_mb = class_size / (1024 * 1024)  # Convert bytes to MB
+                            
+            #                 # Increment size for the folder (subfolder)
+            #                 folder_sizes[subfolder_path] += class_size_in_mb
+
+
+    # try:
+    #     dex_files = []
+    #     folder_sizes = defaultdict(int)
+    #     # Extract the contents of the APK
+    #     with ZipFile(file_path, 'r') as apk_zip:
+    #         file_list = apk_zip.namelist()
+    #         dex_files = [file for file in file_list if file.startswith('classes') and file.endswith('.dex')]
+    #         # for dex_file in dex_files[0]:
+    #         dex_file = dex_files[0]
+    #         with apk_zip.open(dex_file) as dex_file_content:
+    #             dex_content = dex_file_content.read()
+    #             dex_obj = dvm.DalvikVMFormat(dex_content)
+    #             # dex_classes = get_classes_from_dex(dex_file_content.read())
+    #             for class_obj in dex_obj.get_classes():
+    #                 # Get class name and calculate its size
+    #                     class_name = class_obj.get_name()
+    #                     folder_path = "/".join(class_name.split('/')[:2])  # Get folder structure like Lcom/google
+                        
+    #                     # Only consider subfolders of "Lcom/google"
+    #                     subfolder_path = "/".join(class_name.split('/')[:3])  # e.g., Lcom/google/foo
+                        
+    #                     # Calculate size based on the class's methods, fields, etc.
+    #                     class_size = 0
+    #                     for method in class_obj.get_methods():
+    #                         # Adding method size (method name length + code size)
+    #                         class_size += len(method.get_name()) + method.get_code().get_length()
+                        
+    #                     for field in class_obj.get_fields():
+    #                         # Adding field size (field name length)
+    #                         class_size += len(field.get_name())
+                        
+    #                     # Convert size to MB (can use KB if needed)
+    #                     class_size_in_mb = class_size / (1024 * 1024)  # Convert bytes to MB
+                        
+    #                     # Increment size for the folder (subfolder)
+    #                     folder_sizes[subfolder_path] += class_size_in_mb
+
+
+        # print(folder_sizes)
+        # print(len(folder_sizes))
+        # folder_sizes_dict = dict(folder_sizes)  # Convert defaultdict to dict
+        # print(json.dumps(folder_sizes_dict, indent=4))
+
+        return jsonify({
+            "message": f"File '{file.filename}' successfully uploaded!",
+            "included_files": ""
+        })
+    # except Exception as e:
+    #     return jsonify({"message": f"An error occurred while processing the APK: {str(e)}"}), 500
+
+@app.route('/findSSP', methods=['GET'])
+def findSSP():
+    return render_template('findSSP.html')
 
 if __name__ == '__main__':
-    # app.run(debug=True)
     app.run(host='0.0.0.0', port=4000, debug=True)
