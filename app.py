@@ -10,6 +10,8 @@ from zipfile import ZipFile
 from collections import defaultdict
 from androguard.core.bytecodes.dvm import DalvikVMFormat
 from androguard.core.bytecodes import dvm
+from androguard.core.bytecodes.dvm import DalvikVMFormat
+
 
 app = Flask(__name__)
 
@@ -344,6 +346,30 @@ def get_class_size_from_dex(dex_content, target_class_name):
             total_size += calculate_class_size(class_obj)
     return total_size
 
+def parse_dex(dex_content, ssp):
+    try:
+        dvm = DalvikVMFormat(dex_content)
+        for cls in dvm.get_classes():
+            class_name = cls.get_name()
+
+            if "google" in class_name:
+                if "ads" in class_name and "mediation" in class_name:
+                    adapter_name = class_name.split("/")[-1]
+                    ssp["Lcom/google"].append(adapter_name)
+
+            elif "applovin" in class_name:
+                if "ads" in class_name and "mediation" in class_name:
+                    adapter_name = class_name.split("/")[-1]
+                    ssp["Lcom/applovin"].append(adapter_name)
+
+            elif "ironsource" in class_name:
+                if "ads" in class_name and "mediation" in class_name:
+                    adapter_name = class_name.split("/")[-1]
+                    ssp["Lcom/ironsource"].append(adapter_name)
+    except Exception as e:
+        print(f"Error parsing dex file: {e}")
+
+
 @app.route('/uploadApk', methods=['POST'])
 def upload_apk():
     # Check if the 'apkFile' is part of the request
@@ -366,9 +392,20 @@ def upload_apk():
     file.save(file_path)
 
     target_ssps = {
-        'Lcom/google': 0,
-        'Lcom/applovin': 0,
-        'Lcom/fyber': 0,
+        'Lcom/google': 0.0,
+        'Lcom/applovin': 0.0,
+        'Lcom/ironsource':0.0,
+        'Lcom/fyber': 0.0,
+        'Lcom/facebook':0.0,
+        'Lcom/adinmo':0.0,
+        'Lcom/admofi':0.0,
+        'Lcom/unity':0.0,
+        'Lcom/gadsme':0.0,
+        'Lcom/admob':0.0,
+        'Lcom/inmobi':0.0,
+        'Lcom/vungle':0.0,
+        'Lcom/adster':0.0,
+        'Lcom/flury':0.0,
     }
 
     with ZipFile(file_path, 'r') as apk_zip:
@@ -379,12 +416,44 @@ def upload_apk():
                         dex_content = dex_file_content.read()
                         new_size = get_class_size_from_dex(dex_content, target_ssp)
                         print(f"Total size of {target_ssp} in {dex_file}: {new_size / (1024 * 1024)} MB")
-                        target_ssps[target_ssp] = target_ssps[target_ssp] + new_size
+                        target_ssps[target_ssp] = target_ssps[target_ssp] + new_size/ (1024 * 1024)
                         
-        return jsonify({
-            "message": f"File '{file.filename}' successfully uploaded!",
-            "included_files": ""
-        })
+        print(target_ssps)    
+
+    ssp = {
+        "Lcom/google": [],
+        "Lcom/applovin": [],
+        "Lcom/ironsource": [],
+    }
+
+    try:
+        with ZipFile(file_path, 'r') as apk_zip:
+            dex_files = [f for f in apk_zip.namelist() if f.endswith('.dex')]
+            
+            if not dex_files:
+                return {"message": "No .dex files found in APK"}, 400
+
+            # Process each .dex file
+            for dex_file in dex_files:
+                with apk_zip.open(dex_file) as dex_file_content:
+                    dex_content = dex_file_content.read()
+                    parse_dex(dex_content, ssp)  # Pass 'ssp' along with dex_content
+
+            
+    except Exception as e:
+        print(f"Error processing APK: {e}")
+        return {"message": "Error processing APK"}, 500
+
+    print(target_ssp)
+    print(ssp)
+    return jsonify({
+        "message": f"File '{file.filename}' successfully uploaded!",
+        "target_ssps": target_ssps,
+        "adapters": ssp
+    })
+
+
+
 
 @app.route('/findSSP', methods=['GET'])
 def findSSP():
