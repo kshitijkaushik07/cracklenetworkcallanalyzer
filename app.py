@@ -368,56 +368,58 @@ def upload_apk():
     file.save(file_path)
 
     target_ssps = {
-        'Lcom/google': 0.0,
+        'Lcom/google/android/gms': 0.0,
         'Lcom/applovin': 0.0,
         'Lcom/ironsource':0.0,
         'Lcom/fyber': 0.0,
         'Lcom/facebook':0.0,
-        'Lcom/adinmo':0.0,
-        'Lcom/admofi':0.0,
+        # 'Lcom/adinmo':0.0,
+        # 'Lcom/admofi':0.0,
         'Lcom/unity':0.0,
-        'Lcom/gadsme':0.0,
-        'Lcom/admob':0.0,
+        # 'Lcom/gadsme':0.0,
+        # 'Lcom/admob':0.0,
         'Lcom/inmobi':0.0,
         'Lcom/vungle':0.0,
         'Lcom/adster':0.0,
-        'Lcom/flury':0.0,
+        # 'Lcom/flury':0.0,
     }
 
-    # with ZipFile(file_path, 'r') as apk_zip:
-    #     for target_ssp in target_ssps.keys():
-    #         for dex_file in apk_zip.namelist():
-    #             if dex_file.endswith('.dex') and dex_file.startswith('class'):
-    #                 with apk_zip.open(dex_file) as dex_file_content:
-    #                     dex_content = dex_file_content.read()
-    #                     new_size = get_class_size_from_dex(dex_content, target_ssp)
-    #                     target_ssps[target_ssp] = target_ssps[target_ssp] + (new_size / (1024 * 1024))  
+    with ZipFile(file_path, 'r') as apk_zip:
+        for target_ssp in target_ssps.keys():
+            for dex_file in apk_zip.namelist():
+                
+                if dex_file.endswith('.dex') and dex_file.startswith('class'):
+                    print(dex_file)
+                    with apk_zip.open(dex_file) as dex_file_content:
+                        dex_content = dex_file_content.read()
+                        new_size = get_class_size_from_dex(dex_content, target_ssp)
+                        target_ssps[target_ssp] = target_ssps[target_ssp] + (new_size / (1024 * 1024))  
 
     ssps = {
         "Lcom/google/ads/mediation/": [],
-        "Lcom/applovin/": [],
-        "Lcom/ironsource/": [],
+        "Lcom/applovin/mediation/ads/": [],
+        "Lcom/ironsource/adapters/": [],
     }
     
     with ZipFile(file_path, 'r') as apk_zip:
             for ssp in ssps.keys():
                 for dex_file in apk_zip.namelist():
                     if dex_file.endswith('.dex') and dex_file.startswith('class'):
-                        with apk_zip.open(dex_file) as dex_file_content:
-                            dex_content = dex_file_content.read()
-                            dex_obj = dvm.DalvikVMFormat(dex_content)
-                            for class_obj in dex_obj.get_classes():
-                                if class_obj.get_name().startswith(ssp):
-                                    medaited_ssp = class_obj.get_name()[len(ssp):].split("/", 1)[0]
-                                    if medaited_ssp not in ssps[ssp]:
-                                        ssps[ssp].append(medaited_ssp)
+                            with apk_zip.open(dex_file) as dex_file_content:
+                                dex_content = dex_file_content.read()
+                                dex_obj = dvm.DalvikVMFormat(dex_content)
+                                for class_obj in dex_obj.get_classes():
+                                    if class_obj.get_name().startswith(ssp):
+                                        medaited_ssp = class_obj.get_name()[len(ssp):].split("/", 1)[0]
+                                        if medaited_ssp not in ssps[ssp] and not medaited_ssp.endswith(';'):
+                                            ssps[ssp].append(medaited_ssp)
 
-    print(ssps)
+    
 
     return jsonify({
         "message": f"File '{file.filename}' successfully uploaded!",
         "target_ssps": target_ssps,
-        "adapters": []
+        "adapters": ssps
     })
 
 
