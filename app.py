@@ -346,30 +346,6 @@ def get_class_size_from_dex(dex_content, target_class_name):
             total_size += calculate_class_size(class_obj)
     return total_size
 
-def parse_dex(dex_content, ssp):
-    try:
-        dvm = DalvikVMFormat(dex_content)
-        for cls in dvm.get_classes():
-            class_name = cls.get_name()
-
-            if "google" in class_name:
-                if "ads" in class_name and "mediation" in class_name:
-                    adapter_name = class_name.split("/")[-1]
-                    ssp["Lcom/google"].append(adapter_name)
-
-            elif "applovin" in class_name:
-                if "ads" in class_name and "mediation" in class_name:
-                    adapter_name = class_name.split("/")[-1]
-                    ssp["Lcom/applovin"].append(adapter_name)
-
-            elif "ironsource" in class_name:
-                if "ads" in class_name and "mediation" in class_name:
-                    adapter_name = class_name.split("/")[-1]
-                    ssp["Lcom/ironsource"].append(adapter_name)
-    except Exception as e:
-        print(f"Error parsing dex file: {e}")
-
-
 @app.route('/uploadApk', methods=['POST'])
 def upload_apk():
     # Check if the 'apkFile' is part of the request
@@ -408,51 +384,41 @@ def upload_apk():
         'Lcom/flury':0.0,
     }
 
-    with ZipFile(file_path, 'r') as apk_zip:
-        for target_ssp in target_ssps.keys():
-            for dex_file in apk_zip.namelist():
-                if dex_file.endswith('.dex') and dex_file.startswith('class'):
-                    with apk_zip.open(dex_file) as dex_file_content:
-                        dex_content = dex_file_content.read()
-                        new_size = get_class_size_from_dex(dex_content, target_ssp)
-                        print(f"Total size of {target_ssp} in {dex_file}: {new_size / (1024 * 1024)} MB")
-                        target_ssps[target_ssp] = target_ssps[target_ssp] + new_size/ (1024 * 1024)
-                        
-        print(target_ssps)    
+    # with ZipFile(file_path, 'r') as apk_zip:
+    #     for target_ssp in target_ssps.keys():
+    #         for dex_file in apk_zip.namelist():
+    #             if dex_file.endswith('.dex') and dex_file.startswith('class'):
+    #                 with apk_zip.open(dex_file) as dex_file_content:
+    #                     dex_content = dex_file_content.read()
+    #                     new_size = get_class_size_from_dex(dex_content, target_ssp)
+    #                     target_ssps[target_ssp] = target_ssps[target_ssp] + (new_size / (1024 * 1024))  
 
-    ssp = {
-        "Lcom/google": [],
-        "Lcom/applovin": [],
-        "Lcom/ironsource": [],
+    ssps = {
+        "Lcom/google/ads/mediation/": [],
+        "Lcom/applovin/": [],
+        "Lcom/ironsource/": [],
     }
+    
+    with ZipFile(file_path, 'r') as apk_zip:
+            for ssp in ssps.keys():
+                for dex_file in apk_zip.namelist():
+                    if dex_file.endswith('.dex') and dex_file.startswith('class'):
+                        with apk_zip.open(dex_file) as dex_file_content:
+                            dex_content = dex_file_content.read()
+                            dex_obj = dvm.DalvikVMFormat(dex_content)
+                            for class_obj in dex_obj.get_classes():
+                                if class_obj.get_name().startswith(ssp):
+                                    medaited_ssp = class_obj.get_name()[len(ssp):].split("/", 1)[0]
+                                    if medaited_ssp not in ssps[ssp]:
+                                        ssps[ssp].append(medaited_ssp)
 
-    try:
-        with ZipFile(file_path, 'r') as apk_zip:
-            dex_files = [f for f in apk_zip.namelist() if f.endswith('.dex')]
-            
-            if not dex_files:
-                return {"message": "No .dex files found in APK"}, 400
+    print(ssps)
 
-            # Process each .dex file
-            for dex_file in dex_files:
-                with apk_zip.open(dex_file) as dex_file_content:
-                    dex_content = dex_file_content.read()
-                    parse_dex(dex_content, ssp)  # Pass 'ssp' along with dex_content
-
-            
-    except Exception as e:
-        print(f"Error processing APK: {e}")
-        return {"message": "Error processing APK"}, 500
-
-    print(target_ssp)
-    print(ssp)
     return jsonify({
         "message": f"File '{file.filename}' successfully uploaded!",
         "target_ssps": target_ssps,
-        "adapters": ssp
+        "adapters": []
     })
-
-
 
 
 @app.route('/findSSP', methods=['GET'])
