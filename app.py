@@ -11,7 +11,8 @@ from collections import defaultdict
 from androguard.core.bytecodes.dvm import DalvikVMFormat
 from androguard.core.bytecodes import dvm
 from androguard.core.bytecodes.dvm import DalvikVMFormat
-
+from werkzeug.serving import run_simple
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
 
@@ -349,20 +350,24 @@ def get_class_size_from_dex(dex_content, target_class_name):
 @app.route('/uploadApk', methods=['POST'])
 def upload_apk():
     # Check if the 'apkFile' is part of the request
+    print("1")
     if 'apkFile' not in request.files:
         return jsonify({"message": "No file part in the request"}), 400
-
+    print("2")
     file = request.files['apkFile']
 
     # Check if a file was selected
+    print("3")
     if file.filename == '':
         return jsonify({"message": "No file selected for uploading"}), 400
 
     # Ensure the file is an APK
+    print("4")
     if not file.filename.endswith('.apk'):
         return jsonify({"message": "Invalid file type. Only .apk files are allowed."}), 400
 
     # Save the uploaded file
+    print("5")
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     file.save(file_path)
@@ -373,17 +378,18 @@ def upload_apk():
         'Lcom/ironsource':0.0,
         'Lcom/fyber': 0.0,
         'Lcom/facebook':0.0,
-        # 'Lcom/adinmo':0.0,
-        # 'Lcom/admofi':0.0,
+        'Lcom/adinmo':0.0,
+        'Lcom/admofi':0.0,
         'Lcom/unity':0.0,
-        # 'Lcom/gadsme':0.0,
-        # 'Lcom/admob':0.0,
+        'Lcom/gadsme':0.0,
+        'Lcom/admob':0.0,
         'Lcom/inmobi':0.0,
         'Lcom/vungle':0.0,
         'Lcom/adster':0.0,
-        # 'Lcom/flury':0.0,
+        'Lcom/flury':0.0,
     }
 
+    print("5")
     with ZipFile(file_path, 'r') as apk_zip:
         for target_ssp in target_ssps.keys():
             for dex_file in apk_zip.namelist():
@@ -395,12 +401,14 @@ def upload_apk():
                         new_size = get_class_size_from_dex(dex_content, target_ssp)
                         target_ssps[target_ssp] = target_ssps[target_ssp] + (new_size / (1024 * 1024))  
 
+    print("6")
     ssps = {
         "Lcom/google/ads/mediation/": [],
         "Lcom/applovin/mediation/ads/": [],
         "Lcom/ironsource/adapters/": [],
     }
     
+    print("7")
     with ZipFile(file_path, 'r') as apk_zip:
             for ssp in ssps.keys():
                 for dex_file in apk_zip.namelist():
@@ -415,7 +423,7 @@ def upload_apk():
                                             ssps[ssp].append(medaited_ssp)
 
     
-
+    print("8")
     return jsonify({
         "message": f"File '{file.filename}' successfully uploaded!",
         "target_ssps": target_ssps,
@@ -428,4 +436,6 @@ def findSSP():
     return render_template('findSSP.html')
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=4000, debug=True)
+    # app.run(host='0.0.0.0', port=4000, debug=True)
+    app.wsgi_app = ProxyFix(app.wsgi_app)  # This is optional, used when behind a proxy like Nginx
+    run_simple('0.0.0.0', 4000, app, use_reloader=True, threaded=True)
